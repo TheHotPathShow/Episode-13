@@ -9,13 +9,11 @@ namespace THPS.Episode13
     {
         private NativeArray<QuadTree> _leaves;
         private int _index;
-        private int _capacity;
         
         public QuadTreeHelper(int capacity)
         {
             _leaves = new NativeArray<QuadTree>(capacity, Allocator.Persistent);
             _index = 0;
-            _capacity = capacity;
         }
         
         public void SetNextLeaf(float2 center, float2 extents, int capacity)

@@ -3,9 +3,7 @@ using Unity.Mathematics;
 
 namespace THPS.Episode13
 {
-    public struct BoidSchoolTargetTag : IComponentData
-    {
-    }
+    public struct BoidTargetTag : IComponentData {}
 
     public struct BoidData : IComponentData
     {
@@ -21,16 +19,6 @@ namespace THPS.Episode13
     }
 
     public struct BoidAcceleration : IComponentData
-    {
-        public float2 Value;
-    }
-
-    public struct BoidSchoolRadius : IComponentData
-    {
-        public float Value;
-    }
-    
-    public struct BoidSchoolCenter : IComponentData
     {
         public float2 Value;
     }

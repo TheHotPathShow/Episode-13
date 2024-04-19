@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3569639309333175955}
   - component: {fileID: 4843681738988675364}
+  - component: {fileID: -4470393871559115784}
   m_Layer: 0
   m_Name: BoidPrefab
   m_TagString: Untagged
@@ -84,3 +85,19 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!114 &-4470393871559115784
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7558519638484171409}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9786c6b3359d480b91f80b9dba61cc38, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SightRadius: 1.5
+  MaxSpeed: 10
+  TargetWeight: 0.5
+  SeparationWeight: 1.5

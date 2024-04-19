@@ -9,26 +9,21 @@ namespace THPS.Episode13
 {
     public partial struct BoidMoveSystem : ISystem, ISystemStartStop
     {
-        private ComponentLookup<LocalTransform> _transformLookup;
         private EntityQuery _boidQuery;
-        private float2 _minCorner;
-        private float2 _maxCorner;
         private QuadTreeHelper _helper;
-
-        private Entity _schoolTargetEntity;
+        private Entity _boidTargetEntity;
         
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
-            _transformLookup = SystemAPI.GetComponentLookup<LocalTransform>();
-            state.RequireForUpdate<BoidSchoolTargetTag>();
+            state.RequireForUpdate<BoidTargetTag>();
             _boidQuery = SystemAPI.QueryBuilder().WithAll<BoidData, BoidVelocity, BoidAcceleration>().Build();
             _helper = new QuadTreeHelper(16384);
         }
 
         public void OnStartRunning(ref SystemState state)
         {
-            _schoolTargetEntity = SystemAPI.GetSingletonEntity<BoidSchoolTargetTag>();
+            _boidTargetEntity = SystemAPI.GetSingletonEntity<BoidTargetTag>();
         }
 
         [BurstCompile]
@@ -36,48 +31,19 @@ namespace THPS.Episode13
         {
             _helper.Reset();
             var deltaTime = SystemAPI.Time.DeltaTime;
+            var targetPosition = SystemAPI.GetComponent<LocalTransform>(_boidTargetEntity).Position.xy;
+            var boidEntityArray = _boidQuery.ToEntityArray(state.WorldUpdateAllocator);
+            var quadTree = new QuadTree(float2.zero, 28f, 4);
 
-            var schoolTargetPosition = SystemAPI.GetComponent<LocalTransform>(_schoolTargetEntity).Position;
-            var target = new float2(schoolTargetPosition.x, schoolTargetPosition.y);
-            
-            _transformLookup.Update(ref state);
-
-            var otherBoids = _boidQuery.ToEntityArray(state.WorldUpdateAllocator);
-            var positionContainer = new NativeArray<float2>(otherBoids.Length, state.WorldUpdateAllocator);
-
-            var qtCenter = SystemAPI.GetSingleton<BoidSchoolCenter>().Value;
-            var qtRadius = SystemAPI.GetSingleton<BoidSchoolRadius>().Value * 2f;
-            
-            var quadTree = new QuadTree(qtCenter, qtRadius, 4);
-
-            for (var i = 0; i < otherBoids.Length; i++)
+            for (var i = 0; i < boidEntityArray.Length; i++)
             {
-                var boid = otherBoids[i];
-                var otherPosition = _transformLookup[boid].Position;
-                var pos = new float2(otherPosition.x, otherPosition.y);
-                quadTree.InsertEntity(pos, ref _helper);
-                positionContainer[i] = pos;
+                var boid = boidEntityArray[i];
+                var boidPosition = SystemAPI.GetComponent<LocalTransform>(boid).Position.xy;
+                quadTree.InsertEntity(boidPosition, ref _helper);
             }
 
-            var averagePos = double2.zero;
-
-            foreach (var position in positionContainer)
-            {
-                averagePos += position;
-            }
-            
-            averagePos /= positionContainer.Length;
-
-            var newCenter = new BoidSchoolCenter { Value = (float2)averagePos };
-
-            SystemAPI.SetSingleton(newCenter);
-            
-            otherBoids.Dispose();
-            positionContainer.Dispose();
-            
-            //quadTree.Draw();
-            
-            new FlappyBoidsJob { TargetPosition = target, TheQuadTree = quadTree}.ScheduleParallel();
+            quadTree.Draw();
+            new FlappyBoidsJob { TargetPosition = targetPosition, QuadTree = quadTree}.ScheduleParallel();
             new BoidMoveJob { DeltaTime = deltaTime }.ScheduleParallel();
         }
 
@@ -94,25 +60,24 @@ namespace THPS.Episode13
     public partial struct FlappyBoidsJob : IJobEntity
     {
         [ReadOnly] public float2 TargetPosition;
-        [ReadOnly, NativeDisableUnsafePtrRestriction] public QuadTree TheQuadTree;
+        [ReadOnly, NativeDisableUnsafePtrRestriction] public QuadTree QuadTree;
         
         [BurstCompile]
         private void Execute(ref BoidAcceleration acceleration, in BoidData boidData, in LocalTransform transform)
         {
             var myPosition = new float2(transform.Position.x, transform.Position.y);
-            var desired = TargetPosition - myPosition;
-            if (math.lengthsq(desired) > 0f)
+            var vectorToTarget = TargetPosition - myPosition;
+            if (math.lengthsq(vectorToTarget) > 0f)
             {
-                desired = math.normalize(desired);
-                desired *= boidData.TargetWeight;
-                acceleration.Value += desired;
+                vectorToTarget = math.normalize(vectorToTarget);
+                vectorToTarget *= boidData.TargetWeight;
             }
 
             var steering = new float2();
             var nearbyCount = 0;
             
             var otherPositions = new NativeList<float2>(0, Allocator.Temp);
-            TheQuadTree.GetNearbyPositions(myPosition, 10f, ref otherPositions);
+            QuadTree.GetNearbyPositions(myPosition, 10f, ref otherPositions);
             
             foreach (var otherPos in otherPositions)
             {
@@ -122,20 +87,20 @@ namespace THPS.Episode13
                 if(distSq >= boidData.SightRadiusSq || distSq <= 0f) continue;
 
                 var diff = myPosition - otherPos;
+                diff = 1 / diff;
                 steering += diff;
                 nearbyCount++;
             }
 
-            otherPositions.Dispose();
-            
-            if (nearbyCount > 0)
+            if (nearbyCount > 0 && math.length(steering) > 0f)
             {
-                steering /= nearbyCount;
                 steering = math.normalize(steering);
                 steering *= boidData.SeparationWeight;
             }
-            
-            acceleration.Value += steering;
+
+            var curAcceleration = vectorToTarget + steering;
+
+            acceleration.Value = math.clamp(curAcceleration, new float2(-100f, -100f), new float2(100f, 100f));
         }
     }
     
@@ -145,7 +110,8 @@ namespace THPS.Episode13
         public float DeltaTime;
         
         [BurstCompile]
-        private void Execute(LocalTransform transform, ref BoidVelocity velocity, ref BoidAcceleration acceleration, in BoidData boidData)
+        private void Execute(ref LocalTransform transform, ref BoidVelocity velocity, in BoidAcceleration acceleration, 
+            in BoidData boidData)
         {
             velocity.Value += acceleration.Value;
             if (math.lengthsq(velocity.Value) > boidData.MaxSpeed * boidData.MaxSpeed)
@@ -153,9 +119,7 @@ namespace THPS.Episode13
                 velocity.Value = math.normalize(velocity.Value) * boidData.MaxSpeed;
             }
             var moveThisFrame = new float3(velocity.Value.x, velocity.Value.y, 0f) * DeltaTime;
-            transform.Translate(moveThisFrame);
-
-            acceleration.Value = float2.zero;
+            transform.Position += moveThisFrame;
         }
     }
 }
